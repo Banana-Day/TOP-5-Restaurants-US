@@ -1,0 +1,201 @@
+
+---
+title: "Fast Food Restaurants across America"
+author: 'Anshuman Moudgil'
+date: "18 May 2018"
+output:
+  html_document:
+    number_sections: true
+    toc: true
+    fig_width: 7
+    fig_height: 4.5
+    theme: readable
+    highlight: tango
+    code_folding: hide
+Source: Datafiniti
+---
+
+------------------------------------------------------------------
+Kaggle URL: https://www.kaggle.com/anshumoudgil/top-5-fast-food-restaurants-across-us/notebook
+------------------------------------------------------------------
+Dear Reader,
+
+# Introduction
+
+This notebook will explore about the data of 10000 restaurants spread across America. The data is furnished by **Datafiniti**. In course of this data's exploration I have tried to play upon the geographical area of the US' contiguous states - as one of the dimensions.
+
+Let's take a step further and dig into it.
+
+## Libraries used
+
+```{r, message=FALSE}
+library("tidyr")
+library("dplyr")
+library("ggplot2")
+library("maps")
+
+```
+
+## Data
+
+```{r, warning=FALSE, message=FALSE}
+FoodUS <- read.csv("../input/FastFoodRestaurants.csv", header = TRUE)
+```
+
+### Structure of data
+
+The data is almost in Factor form (R format). The top few rows of the data and it's structure gives us the flavour.
+
+```{r}
+
+str(FoodUS)
+```
+
+# Feature Engineering
+
+Some features are created so as to initiate the exploration.
+
+## Dimensional Ranges - Longitude & Latitude
+
+The Longitudes and Latitudes data are converted into grids of 10° x 5° range, chosen arbitrarily though, especially covering the area of US' geography. Each addition of  a degree - either in Longitude or in Latitude - adds to a distance of approximately 69 miles or 111 km on Earth. Therefore, in this notebook's calculations each created grid is covering an area of **690 x 345 square miles** or approximately 238 050 square miles.
+
+```{r, warning=FALSE}
+FoodUS$lon.grid <- cut(FoodUS$longitude, seq(-130, -70, 10))
+FoodUS$lat.grid <- cut(FoodUS$latitude, seq(25, 50, 5))
+```
+
+```{r}
+FoodUS %>% sample_n(9, replace = TRUE) %>% select(one_of(c("latitude","longitude","name","lat.grid","lon.grid")))
+```
+
+## Frequency of Restaurants per Brand
+
+These new columns shows the number of restaurants per brand and what fraction does it represents.
+
+```{r, warning=FALSE}
+Freq <- FoodUS %>% count(name, sort = TRUE) %>% mutate(proportion = n/sum(n))
+FoodUS <- full_join(FoodUS, Freq, by = "name" )
+```
+
+```{r}
+FoodUS %>% sample_n(9, replace = TRUE) %>% select(one_of(c("name","city","lat.grid", "n")))
+```
+
+## Restaurants on US' map 
+
+The density of restaurants on US' contiguous states map shows how they are distributed. Apparently the Eastern US has more number of restaurants per mile than the Western US.
+
+**Please Note:** As per convention, the degress of longitudes to west of Prime Meridian are stated with **negative sign** and to the east of Prime Meridian are stated with **positive sign**. In a similar manner the degrees of latitudes above Equator are stated with **positive sign** and below the Equator are stated by **negative sign**.
+
+```{r }
+FoodUS %>% filter(!is.na(lat.grid) & !is.na(lon.grid)) %>% ggplot(aes(x = longitude, y = latitude))+
+  geom_polygon(data = map_data("state"), aes(x = long, y = lat, group = group),fill = "white", color = "red")+
+  geom_jitter(alpha = 0.15, color = "navyblue")+
+  theme_bw()+
+  labs(title = "Restaurants on US' contiguous States", x = "Longitudes from West (left) to East (right) ", y = "Latitude from Tropic of Cancer (bottom) to North Pole (top) ")
+```
+
+# Grid-Ranges representation
+
+In this section the data gets sub divided into various grid-ranges and it covers the restaurants' density per square mile.
+
+GRID's dimensions are as follows: 
+
+Longitude x Latitude :: 10° x 5° :: 690 miles x 345 miles
+
+(distance in miles is approximate distance - referred from internet)
+
+## Restaurants density on Grid-Ranges 
+
+The density of restaurants on grid-ranges show how dense some grids on Eastern side are than to Western side. As per graph below, the grids (-90,-80] x (35, 40] and (-90,-80] x (40,45] are too dense.
+
+```{r}
+FoodUS %>% filter(!is.na(lat.grid) & !is.na(lon.grid)) %>% ggplot(aes(x = lon.grid, y = lat.grid))+
+  geom_jitter(alpha = 0.15, color = "navyblue")+
+  theme_bw()+
+  labs(title = "Restaurants density on Grid-Ranges", x = "Longitude's grids from West (left) to East (right) ", y = "Latitude's grids from Tropic of Cancer (bottom) to North Pole (top) ")
+```
+
+## Number of Restaurants per grid
+
+In each grid of Longitude x Latitude :: 690 miles x 345 miles: the Table below shows restaurants per grid. They number depicts all of the restaurants irrespective of the Brand they represent.
+
+```{r, warning=FALSE}
+grid <- as.matrix(table(FoodUS$lat.grid, FoodUS$lon.grid))
+```
+
+```{r}
+grid
+```
+
+## Radius served in miles/restaurant/grid 
+
+If we assume (for the sake of easy calculations) that all restaurants were distributed (or placed) equidistantly in each of the grid and they serve the clients of an area. That served area is a circle.
+
+In such a scenario, the radius in miles served by each restaurant per grid is given in table & graph below. The range of area served by each restaurant per grid goes from minimum radius of 7 miles (approximately) to maximum 275 miles (approximately).
+
+```{r, warning=FALSE}
+E.Distant <- round((sqrt((((69*5*69*10)/grid)/pi))),0)
+```
+
+```{r}
+E.Distant
+```
+
+```{r}
+plot(sort(E.Distant), type = 'b', main = "Radius (miles) served/Restaurant/Grid", ylab = "Radius (miles)", col = "red", ylim = c(0, 300))
+```
+
+## TOP 5 Brands or +51% of Total Restaurants 
+
+The TOP 5 Brands of restaurants in numbers that have maximum arear coverage to serve clients in US, representing +51% of total restaurants in contiguous US, are McDonald's, Burger King, Taco Bell, Wendy's, Arby's. 
+
+Besides, the graph below also shows the 13 provinces where most of these TOP 5 Brands of restaurants serve. The graph takes only TOP 2 most dense grids.
+
+```{r}
+FoodUS %>% filter(!is.na(lat.grid) & !is.na(lon.grid)) %>% filter(lat.grid == "(35,40]" & lon.grid == "(-90,-80]" | lat.grid =="(40,45]" & lon.grid == "(-90,-80]") %>% filter(n > 500) %>% ggplot(aes(y = n>1800, x = n < 1200))+
+  geom_jitter(alpha = 0.36, color = "red")+
+  theme_bw()+
+  facet_grid(lat.grid ~ province)+
+  labs(title = "TOP 5 Restaurants and the Provinces", x = "TRUE: IF its Burger King or Taco Bell or Wendy's or Arby's, FALSE: Otherwise", y = "TRUE: IF its Mc Donald's, FALSE: Otherwise")
+```
+
+# Conclusion
+
+In one of the **most dense grid** - of 10° x 5° or 690 miles x 345 miles (approximately) and that has maximum number of restaurants serving that grid area - **each of the TOP 5 Brands of restaurants** serve an area with the **radius of 22 miles (approx.)**. IF **all restaurants are taken** into account - then in the most dense grid - the **area served by each one** of the restaurants has a **radius of +7.25 miles (approx.)**. The last Table shows it.
+
+```{r}
+radius <- round(sqrt((((69*5*69*10))/max(table(FoodUS$lon.grid, FoodUS$lat.grid)))/pi),2)
+
+FoodUSMcD <- FoodUS %>% filter(name == "McDonald's")
+tableMcD <- table(FoodUSMcD$lon.grid, FoodUSMcD$lat.grid)
+radiusMcD <- round(sqrt((((69*5*69*10))/max(table(FoodUSMcD$lon.grid, FoodUSMcD$lat.grid)))/pi),2)
+
+FoodUSBK <- FoodUS %>% filter(name == "Burger King")
+tableBK <- table(FoodUSBK$lon.grid, FoodUSBK$lat.grid)
+radiusBK <- round(sqrt((((69*5*69*10))/max(table(FoodUSBK$lon.grid, FoodUSBK$lat.grid)))/pi),2)
+
+FoodUSTB <- FoodUS %>% filter(name == "Taco Bell")
+tableTB <- table(FoodUSTB$lon.grid, FoodUSTB$lat.grid)
+radiusTB <- round(sqrt((((69*5*69*10))/max(table(FoodUSTB$lon.grid, FoodUSTB$lat.grid)))/pi),2)
+
+FoodUSW <- FoodUS %>% filter(name == "Wendy's")
+tableW <- table(FoodUSW$lon.grid, FoodUSW$lat.grid)
+radiusW <- round(sqrt((((69*5*69*10))/max(table(FoodUSW$lon.grid, FoodUSW$lat.grid)))/pi),2)
+
+FoodUSA <- FoodUS %>% filter(name == "Arby's")
+tableA <- table(FoodUSA$lon.grid, FoodUSA$lat.grid)
+radiusA <- round(sqrt((((69*5*69*10))/max(table(FoodUSA$lon.grid, FoodUSA$lat.grid)))/pi),2)
+
+Radius.in.Miles <- matrix(c(radius, radiusMcD, radiusBK, radiusW, radiusTB, radiusA, max(grid), max(table(FoodUSMcD$lon.grid, FoodUSMcD$lat.grid)), max(table(FoodUSBK$lon.grid, FoodUSBK$lat.grid)), max(table(FoodUSW$lon.grid, FoodUSW$lat.grid)), max(table(FoodUSTB$lon.grid, FoodUSTB$lat.grid)), max(table(FoodUSA$lon.grid, FoodUSA$lat.grid))), ncol = 2, byrow = FALSE)
+colnames(Radius.in.Miles) <- c("Radius-In-Miles", "Max-Restaurants")
+row.names(Radius.in.Miles) <- c("Global","McDonald's","Burger King","Wendy's","Taco Bell","Arby's")
+Radius.in.Miles <- as.table(Radius.in.Miles)
+```
+```{r}
+Radius.in.Miles
+```
+
+Thanks for reading and giving your time to this NoteBook. Please do write your views.
+
+Best Regards.
